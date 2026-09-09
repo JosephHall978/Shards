@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Shards &mdash; scan a repo{% endblock %}
+
+{% block content %}
+<div class="shards-hero">
+  <p class="shards-eyebrow">repo hygiene checker</p>
+  <h1 class="title shards-title">Find what's broken before someone else does.</h1>
+  <p class="subtitle shards-subtitle">
+    Point Shards at a git repository. It clones it, maps every file, checks each
+    README's links, and cross-checks requirements.txt against what the code actually imports.
+  </p>
+</div>
+
+<div class="columns">
+  <div class="column is-7">
+    <form class="box shards-form" method="post" action="{{ url_for('analyze') }}">
+      <div class="field">
+        <label class="label" for="git_url">Git repository URL</label>
+        <div class="control">
+          <input class="input" type="text" id="git_url" name="git_url"
+                 placeholder="https://github.com/owner/repo.git" required
+                 value="{{ request.form.get('git_url', '') }}">
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="checkbox">
+          <input type="checkbox" name="check_remote_links" checked>
+          Check external links too (slower &mdash; makes a request per link)
+        </label>
+      </div>
+
+      <div class="field">
+        <label class="checkbox">
+          <input type="checkbox" name="use_genai" checked>
+          Generate an AI summary via Ollama (falls back to a rule-based summary if Ollama isn't running)
+        </label>
+      </div>
+
+      <div class="field mt-4">
+        <div class="control">
+          <button class="button shards-button-primary" type="submit">Scan repository</button>
+        </div>
+      </div>
+
+      {% if error %}
+        <div class="notification shards-notification-error mt-4">{{ error }}</div>
+      {% endif %}
+    </form>
+  </div>
+
+  <div class="column is-5">
+    <div class="box shards-legend">
+      <p class="shards-legend-title">What the graph will show</p>
+      <ul class="shards-legend-list">
+        <li><span class="shards-dot" style="background:#8e44ad"></span>Folder</li>
+        <li><span class="shards-dot" style="background:#3498db"></span>Python / notebook file</li>
+        <li><span class="shards-dot" style="background:#e6a4c4"></span>Other file</li>
+        <li><span class="shards-dot" style="background:#2ecc40"></span>README / requirements.txt, no issues</li>
+        <li><span class="shards-dot" style="background:#e67e22"></span>README / requirements.txt, has issues</li>
+        <li><span class="shards-dot" style="background:#e74c3c"></span>Missing resource / no requirements.txt</li>
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Shards &mdash; report{% endblock %}
+
+{% block content %}
+<p class="shards-eyebrow"><a href="{{ url_for('index') }}">&larr; scan another repo</a></p>
+<h1 class="title shards-title">{{ result.git_url }}</h1>
+
+{% if not result.ok %}
+  <div class="notification shards-notification-error">{{ result.error }}</div>
+{% else %}
+  <p class="shards-subtitle">Scanned in {{ result.duration_seconds }}s.</p>
+
+  <div class="box shards-graph-box">
+    <div id="shards-graph"></div>
+  </div>
+
+  <details class="shards-fold" open>
+    <summary class="shards-fold-summary">
+      Requirements
+      {% if not result.requirements_result.exists %}
+        <span class="tag shards-tag-red">no requirements.txt</span>
+      {% elif result.requirements_result.ok %}
+        <span class="tag shards-tag-green">all imports covered</span>
+      {% else %}
+        <span class="tag shards-tag-orange">{{ result.requirements_result.missing|length }} missing</span>
+      {% endif %}
+    </summary>
+    <div class="shards-fold-body">
+      {% set rr = result.requirements_result %}
+      {% if not rr.exists %}
+        <p>No <code>requirements.txt</code> was found anywhere in this repository.</p>
+      {% else %}
+        <p>Canonical file: <code>{{ rr.rel_path }}</code></p>
+      {% endif %}
+
+      {% if rr.missing %}
+        <p>Imported but not declared:</p>
+        <table class="table is-fullwidth shards-table">
+          <thead><tr><th>Import</th><th>Add to requirements.txt</th></tr></thead>
+          <tbody>
+            {% for mod in rr.missing %}
+            <tr><td><code>{{ mod }}</code></td><td><code>{{ rr.suggestions.get(mod, mod) }}</code></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p>Every top-level import detected in the code is covered.</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="shards-fold">
+    <summary class="shards-fold-summary">
+      README files
+      {% set broken_count = result.readme_results | rejectattr('ok') | list | length %}
+      {% if result.readme_results|length == 0 %}
+        <span class="tag shards-tag-red">none found</span>
+      {% elif broken_count == 0 %}
+        <span class="tag shards-tag-green">all clean</span>
+      {% else %}
+        <span class="tag shards-tag-orange">{{ broken_count }} with broken links</span>
+      {% endif %}
+    </summary>
+    <div class="shards-fold-body">
+      {% if result.readme_results|length == 0 %}
+        <p>No README.md files were found.</p>
+      {% endif %}
+      {% for rr in result.readme_results %}
+        <div class="shards-readme-item">
+          <p><code>{{ rr.rel_path }}</code> &mdash; {{ rr.links_checked }} link(s) checked
+            {% if rr.ok %}<span class="tag shards-tag-green">clean</span>
+            {% else %}<span class="tag shards-tag-orange">{{ rr.broken_links|length }} broken</span>{% endif %}
+          </p>
+          {% if rr.broken_links %}
+          <table class="table is-fullwidth shards-table">
+            <thead><tr><th>Link text</th><th>Target</th><th>Reason</th></tr></thead>
+            <tbody>
+              {% for b in rr.broken_links %}
+              <tr>
+                <td>{{ b.text }}</td>
+                <td><code>{{ b.target }}</code></td>
+                <td>{{ b.reason }}{% if b.is_remote %} (remote){% else %} (local){% endif %}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </details>
+
+  <details class="shards-fold">
+    <summary class="shards-fold-summary">
+      AI summary & fixes
+      <span class="tag shards-tag-teal">{{ result.summary.source }}</span>
+    </summary>
+    <div class="shards-fold-body">
+      {% if result.summary.source == "rule-based" %}
+        <p class="shards-note">Ollama wasn't reachable at localhost:11434, showing a rule-based summary instead.</p>
+      {% endif %}
+      <p>{{ result.summary.text }}</p>
+    </div>
+  </details>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if result.ok %}
+<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<script>
+  const graphData = {{ graph_json|safe }};
+  const nodes = new vis.DataSet(graphData.nodes);
+  const edges = new vis.DataSet(graphData.edges);
+  const container = document.getElementById("shards-graph");
+  const data = { nodes, edges };
+  const options = {
+    autoResize: true,
+    height: "520px",
+    nodes: { font: { color: "#20302c", face: "Inter" }, borderWidth: 1 },
+    edges: { color: { color: "#c9d6d3" }, smooth: { type: "cubicBezier", roundness: 0.5 } },
+    physics: { stabilization: true, barnesHut: { gravitationalConstant: -3000, springLength: 90 } },
+    layout: { improvedLayout: true }
+  };
+  new vis.Network(container, data, options);
+</script>
+{% endif %}
+{% endblock %}
