@@ -55,7 +55,7 @@ def scan_repo(root: str) -> ScanResult:
             if lower == "readme.md":
                 kind = "readme"
                 result.readme_paths.append(rel_path)
-            elif lower == "requirements.txt":
+            elif lower == "requirements.txt" or lower == "pyproject.toml":
                 kind = "requirements"
                 result.requirements_paths.append(rel_path)
             elif ext in PYTHON_EXTS:

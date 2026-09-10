@@ -9,30 +9,21 @@ import re
 import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Set
+import tomllib
+import json
 
-# Import name -> pip package name, for the common cases where they differ.
-IMPORT_TO_PACKAGE = {
-    "PIL": "Pillow",
-    "cv2": "opencv-python",
-    "sklearn": "scikit-learn",
-    "yaml": "PyYAML",
-    "bs4": "beautifulsoup4",
-    "dotenv": "python-dotenv",
-    "dateutil": "python-dateutil",
-    "git": "GitPython",
-    "jwt": "PyJWT",
-    "Crypto": "pycryptodome",
-    "cryptography": "cryptography",
-    "docx": "python-docx",
-    "pptx": "python-pptx",
-    "OpenSSL": "pyOpenSSL",
-    "google": "google-cloud",
-    "flask_sqlalchemy": "Flask-SQLAlchemy",
-    "flask_cors": "Flask-Cors",
-    "serial": "pyserial",
-    "skimage": "scikit-image",
-    "requests_oauthlib": "requests-oauthlib",
-}
+
+def load_import_map(json_path: str = "./backend/pip_to_import.json") -> Dict[str, str]:
+    """Loads the import-to-package mapping from a JSON file."""
+    if not os.path.exists(json_path):
+        raise FileNotFoundError(f"Mapping file not found at {json_path}")
+
+    with open(json_path, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+# Usage
+IMPORT_TO_PACKAGE = load_import_map()
 
 # Best-effort stdlib module list; falls back to sys.stdlib_module_names on 3.10+.
 STDLIB_MODULES: Set[str] = set(getattr(sys, "stdlib_module_names", ()))
@@ -82,25 +73,71 @@ def extract_imports(py_path: str) -> Set[str]:
 
     return {m for m in modules if m and m not in STDLIB_MODULES}
 
+PACKAGE_NAME_RE = re.compile(r"^\s*([a-zA-Z0-9_\-\.]+)")
 
-REQ_LINE_RE = re.compile(r"^\s*([A-Za-z0-9_.\-]+)")
+def parse_requirement_line(line: str) -> str | None:
+    """Extracts and normalizes the base package name from a dependency string."""
+    # Strip comments and excess whitespace
+    line = line.split("#", 1)[0].strip()
+
+    # Ignore empty lines or pip flags (-r, -e, --extra-index-url, etc.)
+    if not line or line.startswith("-"):
+        return None
+
+    match = PACKAGE_NAME_RE.match(line)
+    if match:
+        return match.group(1)
+    return None
 
 
 def parse_requirements_file(path: str) -> Set[str]:
-    declared = set()
+    declared: Set[str] = set()
+
+    if not os.path.exists(path):
+        return declared
+
+    # Handle pyproject.toml
+    if path.endswith(".toml"):
+        try:
+            with open(path, "rb") as fh:
+                data = tomllib.load(fh)
+
+            # 1. Standard PEP 621 dependencies: [project.dependencies]
+            project = data.get("project", {})
+            raw_deps = list(project.get("dependencies", []))
+
+            # Optional dependencies: [project.optional-dependencies]
+            for opt_deps in project.get("optional-dependencies", {}).values():
+                raw_deps.extend(opt_deps)
+
+            # 2. Poetry dependencies: [tool.poetry.dependencies]
+            poetry_deps = data.get("tool", {}).get("poetry", {}).get("dependencies", {})
+            for pkg, spec in poetry_deps.items():
+                if pkg.lower() != "python":
+                    declared.add(pkg)
+
+            # Process collected PEP 621 / standard strings
+            for dep in raw_deps:
+                pkg_name = parse_requirement_line(dep)
+                if pkg_name:
+                    declared.add(pkg_name)
+
+        except (OSError, tomllib.TOMLDecodeError):
+            pass
+        return declared
+
+    # Handle requirements.txt / standard setup files
     try:
         with open(path, "r", encoding="utf-8", errors="ignore") as fh:
             for line in fh:
-                line = line.strip()
-                if not line or line.startswith("#") or line.startswith("-"):
-                    continue
-                match = REQ_LINE_RE.match(line)
-                if match:
-                    # normalize for comparison: lowercase, - and _ treated the same
-                    declared.add(match.group(1).lower().replace("_", "-"))
+                pkg_name = parse_requirement_line(line)
+                if pkg_name:
+                    declared.add(pkg_name)
     except OSError:
         pass
+
     return declared
+
 
 
 def _package_is_declared(package_name: str, declared: Set[str]) -> bool:
